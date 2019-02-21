@@ -28,6 +28,9 @@ spec:
               secretKeyRef:
                 name: rook-ceph-mon
                 key: admin-secret
+        envFrom:
+          - configMapRef:
+                name: rook-ceph-object-secrets-configmap
         securityContext:
           privileged: true
         volumeMounts:
