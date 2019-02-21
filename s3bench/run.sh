@@ -1,3 +1,11 @@
 # y: bytes of object, t: thread of concurrency, l: loop of time(measure time)
-./s3-benchmark -y 200000 -t 10 -l 100 -a CXPS27F2AWRVHJGDVGXA -b s3-benchmark -s FCBqA35AGMsG5bPWdD1mA6Nfl8yV82iSeA6K4Ca7 -u 127.0.0.1:80 -z 1k
+threads=10
+loops=10
+bucket="s3-benchmark"
+access_key="CXPS27F2AWRVHJGDVGXA"
+secret_key="FCBqA35AGMsG5bPWdD1mA6Nfl8yV82iSeA6K4Ca7"
+target="127.0.0.1:80"
+objkey="objkey"
+filesize=20000000
+./s3-bench -y $filesize -k $objkey -t $threads -l $loops  -a $access_key -b $bucket -s $secret_key -u $target 
 

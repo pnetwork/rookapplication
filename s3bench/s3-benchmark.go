@@ -32,14 +32,15 @@ import (
 )
 
 // Global variables
-var access_key, secret_key, url_host, bucket, region string
-var duration_secs, threads, loops, filesize int
+var access_key, secret_key, url_host, bucket, region, formKey string
+var duration_secs, threads, loops, filesize, localloops int
 var object_size uint64
 var object_data []byte
 var object_data_md5 string
 var running_threads, upload_count, download_count, delete_count, upload_slowdown_count, download_slowdown_count, delete_slowdown_count int32
 var endtime, upload_finish, download_finish, delete_finish time.Time
 var deleteobj bool
+var wg sync.WaitGroup
 
 func logit(msg string) {
 	fmt.Println(msg)
@@ -52,7 +53,7 @@ func logit(msg string) {
 func logresult(msg string) {
 	fmt.Println(msg)
 	t := time.Now()
-	output := fmt.Sprintf("%s-%s.log", "benchmark", t.Format("20060102150405"))
+	output := fmt.Sprintf("%s-%s-%s.log", "benchmark", bucket, t.Format("20060102150405"))
 	logfile, _ := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if logfile != nil {
 		logfile.WriteString(time.Now().Format(http.TimeFormat) + ": " + msg + "\n")
@@ -226,10 +227,12 @@ func setSignature(req *http.Request) {
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func RandStringBytes(n int) string {
+	fmt.Println("prepare data now........")
 	b := make([]byte, n)
 	for i := range b {
 		b[i] = letterBytes[rand.Intn(len(letterBytes))]
 	}
+	fmt.Println("prepare data done.......")
 	return string(b)
 }
 
@@ -251,27 +254,40 @@ func deleteObjects(thread_num int, loop_num int, bucket string, formKey string) 
 	}
 	fmt.Println("delete object", tkey)
 }
-func putObject(thread_num int, loop_num int, bucket string, b string, formKey string) {
+
+func cleanAllObjects(loops int, threads int, bucket string, formKey string) {
+	for loop := 0; loop < localloops; loop++ {
+		for thread := 0; thread < threads; thread++ {
+			deleteObjects(thread, loop, bucket, formKey)
+		}
+	}
+}
+
+func putObject(thread_num int, bucket string, b string, formKey string) {
 	//svc := s3.New(session.New())
-	atomic.AddInt32(&upload_count, 1)
+	logit("now in putobject thread")
+	defer wg.Done()
 	svc, _ := getS3Client()
 	//_, svc := getS3Client()
 	//formKey := "objkey"
 	//fmt.Println(b)
-	tkey := fmt.Sprintf("%s-%d-%d", formKey, thread_num, loop_num)
-	input := &s3.PutObjectInput{
-		//	Body:   aws.ReadSeekCloser(strings.NewReader("filetoupload")),
-		Body:   aws.ReadSeekCloser(strings.NewReader(b)),
-		Bucket: aws.String(bucket),
-		Key:    aws.String(tkey),
+	for localloop_num := 0; localloop_num < localloops; localloop_num++ {
+		tkey := fmt.Sprintf("%s-%d-%d", formKey, thread_num, localloop_num)
+		fmt.Println("threadnum:", thread_num, "uploadfile.....")
+		input := &s3.PutObjectInput{
+			//	Body:   aws.ReadSeekCloser(strings.NewReader("filetoupload")),
+			Body:   aws.ReadSeekCloser(strings.NewReader(b)),
+			Bucket: aws.String(bucket),
+			Key:    aws.String(tkey),
+		}
+		_, err := svc.PutObject(input)
+		if err != nil {
+			fmt.Println("some error")
+			fmt.Println(err)
+			return
+		}
+		//fmt.Println(result)
 	}
-	_, err := svc.PutObject(input)
-	if err != nil {
-		fmt.Println("some error")
-		fmt.Println(err)
-		return
-	}
-	//fmt.Println(result)
 	atomic.AddInt32(&running_threads, -1)
 }
 
@@ -402,14 +418,6 @@ func runDelete(thread_num int) {
 	atomic.AddInt32(&running_threads, -1)
 }
 
-func cleanAllObjects(loops int, threads int, bucket string, formKey string) {
-	for loop := 0; loop < loops; loop++ {
-		for thread := 0; thread < threads; thread++ {
-			deleteObjects(thread, loop, bucket, formKey)
-		}
-	}
-}
-
 func main() {
 	// Hello
 	fmt.Println("Wasabi benchmark program v2.0")
@@ -423,11 +431,13 @@ func main() {
 	myflag.StringVar(&region, "r", "US", "Region for testing")
 	myflag.IntVar(&duration_secs, "d", 60, "Duration of each test in seconds")
 	myflag.IntVar(&threads, "t", 1, "Number of threads to run")
-	myflag.IntVar(&loops, "l", 1, "Number of times to repeat test")
+	myflag.IntVar(&loops, "lp", 1, "Number of times to repeat test")
+	myflag.IntVar(&localloops, "l", 1, "Number of times to repeat test")
 	myflag.IntVar(&filesize, "y", 1000, "bytes of object, unit bytes")
 	myflag.BoolVar(&deleteobj, "c", false, "delete all obj")
+	myflag.StringVar(&formKey, "k", "objkey", "objkey or prefix object name")
 	fmt.Println("delete meesage", deleteobj)
-	formKey := "objkey"
+	//formKey := "objkey"
 	var sizeArg string
 	myflag.StringVar(&sizeArg, "z", "1M", "Size of objects in bytes with postfix K, M, and G")
 	if err := myflag.Parse(os.Args[1:]); err != nil {
@@ -448,7 +458,7 @@ func main() {
 
 	// Echo the parameters
 	logit(fmt.Sprintf("Parameters: url=%s, bucket=%s, region=%s, duration=%d, threads=%d, loops=%d, size=%s",
-		url_host, bucket, region, duration_secs, threads, loops, sizeArg))
+		url_host, bucket, region, duration_secs, threads, localloops, filesize))
 
 	if !deleteobj {
 		// Initialize data for the bucket
@@ -460,7 +470,7 @@ func main() {
 
 		// Create the bucket and delete all the objects
 		createBucket(true)
-		deleteAllObjects()
+		//deleteAllObjects()
 
 		// Loop running the tests
 
@@ -468,47 +478,46 @@ func main() {
 		n := filesize
 		b := RandStringBytes(n)
 		starttime := time.Now()
-		for loop := 0; loop < loops; loop++ {
+		wg.Add(int(threads))
 
-			// reset counters
-			upload_count = 0
-			upload_slowdown_count = 0
-			download_count = 0
-			download_slowdown_count = 0
-			delete_count = 0
-			delete_slowdown_count = 0
+		// reset counters
+		upload_count = 0
+		upload_slowdown_count = 0
+		download_count = 0
+		download_slowdown_count = 0
+		delete_count = 0
+		delete_slowdown_count = 0
 
-			// Run the upload case
-			running_threads = int32(threads)
-			//endtime = starttime.Add(time.Second * time.Duration(duration_secs))
-			for n := 0; n < threads; n++ {
-				//go runUpload(n)
-				//go runUploadNew(n, loop, bucket)
-				go putObject(n, loop, bucket, b, formKey)
-			}
+		// Run the upload case
+		running_threads = int32(threads)
+		//endtime = starttime.Add(time.Second * time.Duration(duration_secs))
+		for n := 0; n < threads; n++ {
+			//go runUpload(n)
+			//go runUploadNew(n, loop, bucket)
+			go putObject(n, bucket, b, formKey)
+		}
 
-			// Wait for it to finish
-			//fmt.Println("uploading now wait for finished")
+		// Wait for it to finish
+		//fmt.Println("uploading now wait for finished")
 
-			for atomic.LoadInt32(&running_threads) > 0 {
-				time.Sleep(time.Millisecond)
-			}
+		wg.Wait()
+		/*
 			upload_finish = time.Now()
 			upload_time := upload_finish.Sub(starttime).Seconds()
 
 			bps := float64(int(upload_count)*filesize*loop) / upload_time
 			logit(fmt.Sprintf("Loop %d: PUT time %.1f secs, objects_count = %d, speed = %sB/sec, %.1f operations/sec. Slowdowns = %d",
 				loop, upload_time, upload_count, bytefmt.ByteSize(uint64(bps)), float64(loop*threads)/upload_time, upload_slowdown_count))
-		}
+		*/
 		upload_finish = time.Now()
 		end_time := upload_finish.Sub(starttime).Seconds()
-		bps := float64(int(loops*threads)*filesize) / end_time
+		bps := float64(int(localloops*threads)*filesize) / end_time
 		logresult(fmt.Sprintf("Finished: Loop %d: PUT time %.1f secs, objects_count = %d, concurrency = %d speed = %sB/sec, %.1f operations/sec. filesize = %d",
-			loops, end_time, loops*threads, threads, bytefmt.ByteSize(uint64(bps)), float64(loops*threads)/end_time, filesize))
+			localloops, end_time, localloops*threads, threads, bytefmt.ByteSize(uint64(bps)), float64(localloops*threads)/end_time, filesize))
 
 	} else {
 		fmt.Println("start to clena data")
-		cleanAllObjects(loops, threads, bucket, formKey)
+		cleanAllObjects(localloops, threads, bucket, formKey)
 	}
 	/*
 	 */
