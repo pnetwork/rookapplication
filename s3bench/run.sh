@@ -7,5 +7,11 @@ secrets_key="FCBqA35AGMsG5bPWdD1mA6Nfl8yV82iSeA6K4Ca7"
 target="127.0.0.1:80"
 objkey="objkey"
 filesize=20000000
+
 ./s3-bench -y $filesize -k $objkey -t $threads -l $loops  -a $access_key -b $bucket -s $secrets_key -u $target 
+#while :
+#do
+#  ./s3-bench -y $filesize -k $objkey -t $threads -l $loops  -a $access_key -b $bucket -s $secrets_key -u $target 
+#  sleep 3
+#done
 
