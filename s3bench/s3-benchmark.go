@@ -33,7 +33,7 @@ import (
 
 // Global variables
 var access_key, secret_key, url_host, bucket, region, formKey string
-var duration_secs, threads, loops, filesize, localloops int
+var duration_secs, threads, loops, filesize, localloops, localloopsleep int
 var object_size uint64
 var object_data []byte
 var object_data_md5 string
@@ -52,11 +52,12 @@ func logit(msg string) {
 }
 func logresult(msg string) {
 	fmt.Println(msg)
-	t := time.Now()
-	output := fmt.Sprintf("%s-%s-%s.log", "benchmark", bucket, t.Format("20060102150405"))
-	logfile, _ := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	//t := time.Now()
+	//output := fmt.Sprintf("benchmark-result.log", "benchmark", bucket, t.Format("20060102150405"))
+	//output := fmt.Sprintf("%s-%s-%s.log", "benchmark", bucket, t.Format("20060102150405"))
+	logfile, _ := os.OpenFile("benchmark-result.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if logfile != nil {
-		logfile.WriteString(time.Now().Format(http.TimeFormat) + ": " + msg + "\n")
+		logfile.WriteString(time.Now().Format("20060102150405") + ": " + msg + "\n")
 		logfile.Close()
 	}
 }
@@ -287,6 +288,7 @@ func putObject(thread_num int, bucket string, b string, formKey string) {
 			return
 		}
 		//fmt.Println(result)
+		time.Sleep(time.Duration(localloopsleep) * time.Second)
 	}
 	atomic.AddInt32(&running_threads, -1)
 }
@@ -432,6 +434,7 @@ func main() {
 	myflag.IntVar(&duration_secs, "d", 60, "Duration of each test in seconds")
 	myflag.IntVar(&threads, "t", 1, "Number of threads to run")
 	myflag.IntVar(&loops, "lp", 1, "Number of times to repeat test")
+	myflag.IntVar(&localloopsleep, "ls", 0, "Number of times to repeat test")
 	myflag.IntVar(&localloops, "l", 1, "Number of times to repeat test")
 	myflag.IntVar(&filesize, "y", 1000, "bytes of object, unit bytes")
 	myflag.BoolVar(&deleteobj, "c", false, "delete all obj")
